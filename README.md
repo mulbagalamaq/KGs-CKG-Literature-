@@ -1,9 +1,19 @@
 
 **Goal:** Implement a system to use GNNs + an LLM over knowledge graphs to integreate literature with knowledge graphs made from large public datasets to turn a free-text biomedical question into a grounded answer with summarized biomedical information and PMIDs / experiment IDs. 
 
+##✨ **TL;DR (Summary)**
+
+Question → Embedding → Retrieval: Encode the user’s question, then retrieve top-k candidate nodes from Clinical KG (CKG) and Public KG (PKG) using OpenSearch.
+
+Graph Expansion: Expand seeds in Neptune with openCypher (1–2 hops, label filters, degree caps).
+
+Pruning: Apply a PCST-like algorithm to produce a compact, evidence-rich subgraph.
+
+Answering: Feed the pruned subgraph + supporting snippets into an LLM to generate a grounded answer with biomedical summary and PMIDs/experiment IDs as citations.
+
 <img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
 
-🧭 End-to-end flow
+##🧭** End-to-end flow**
 
 Embed: Encode the user question with a sentence embedding model (e.g., bge-large, text-embedding-3-large) and optionally a domain adapter.
 
