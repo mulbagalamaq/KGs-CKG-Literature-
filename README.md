@@ -3,23 +3,6 @@
 
 <img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
 
-
-## 🏗️ Architecture (high-level)
-
-## 🏗️ Architecture (high-level)
-
-```mermaid
-flowchart TD
-    UQ["User Q"] --> E[Embedder]
-    E --> OS[OpenSearch]
-    OS -->|seeds| N[Neptune (openCypher)]
-    N -->|"expanded 1–2 hops"| P[PCST Pruner (GNN-aware)]
-    P -->|"compact subgraph + snippets"| L[LLM Answerer]
-    L -->|"grounded answer + citations"| A[Answer]
-```
-
-
-
 🧭 End-to-end flow
 
 Embed: Encode the user question with a sentence embedding model (e.g., bge-large, text-embedding-3-large) and optionally a domain adapter.
