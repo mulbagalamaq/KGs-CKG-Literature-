@@ -9,7 +9,7 @@ We study question answering over a heterogeneous biomedical knowledge graph by c
 - **Pruning**: Apply a PCST-like algorithm to create a compact, evidence-rich subgraph.
 - **Answering**: Feed the subgraph + snippets into an LLM to generate a grounded answer with biomedical information and PMIDs/experiment IDs.
 
-<img width="4997" height="2808" alt="image" src="https://github.com/user-attachments/assets/c583b661-5391-464c-ba31-b47afb9ece95" />
+<img width="4997" height="2808" alt="image" src="https://github.com/user-attachments/assets/ce2c7868-cab2-4278-8f3e-987d5200b504" />
 
 ## Methods
 ### Knowledge graph and indexing
