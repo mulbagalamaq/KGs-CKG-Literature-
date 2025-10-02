@@ -1,5 +1,5 @@
 
-**Goal:** Implement a system to use GNNs + LLM over knowledge graphs to integrate literature with knowledge graphs made from large public datasets to turn a free-text biomedical question into a grounded answer with biomedical information and PMIDs / experiment IDs. 
+**Goal:** Implement a system to use GNNs + LLM to integrate knowledge graphs made from large public datasets with literature to turn a free-text biomedical question into a grounded answer with biomedical information and PMIDs / experiment IDs. 
 
 ## ✨ TL;DR (Summary)
 
@@ -11,7 +11,6 @@
 <img width="4997" height="2808" alt="image" src="https://github.com/user-attachments/assets/c583b661-5391-464c-ba31-b47afb9ece95" />
 
 ## Methods
-
 
 1. **Data Preparation**  
    - Collect PrimeKG and PubMedKG exports.  
