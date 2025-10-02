@@ -59,5 +59,5 @@ Retrieval and pruning are implemented in `src/retrieval/g_retriever.py` and `src
 ### Reproducibility and evaluation
 We fix seeds for deterministic runs, log all hyperparameters, and report Hits@K, Recall@K, and MRR on biomedical benchmarks with multi-hop questions. We ablate $k$, expansion radius, prize schedules, and $\lambda$ to quantify PCST sensitivity, aligning with prior observations on hyperparameter coupling in GraphRAG.
 ### References
-- NVIDIA Technical Blog: Boosting Q&A Accuracy with GraphRAG Using PyG and Graph Databases — see `https://developer.nvidia.com/blog/boosting-qa-accuracy-with-graphrag-using-pyg-and-graph-databases/`
-- G-Retriever: Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering (arXiv:2402.07630) — see `https://arxiv.org/pdf/2402.07630`
+- NVIDIA Technical Blog: Boosting Q&A Accuracy with GraphRAG Using PyG and Graph Databases — see <https://developer.nvidia.com/blog/boosting-qa-accuracy-with-graphrag-using-pyg-and-graph-databases/>
+- G-Retriever: Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering (arXiv:2402.07630) — see <https://arxiv.org/pdf/2402.07630>
