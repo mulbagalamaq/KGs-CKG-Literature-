@@ -13,6 +13,6 @@
 ## Methods
 1. Ingest raw exports → we rely on CSVs/TSVs under data/local/primeKG/exports and data/local/pubmedkg/exports.
 2. Convert to graph-ready CSVs → scripts produce data/graph/primekg/ and data/graph/pkg/ directories with nodes.csv + edges.csv.
-3. Load into a graph database → either Amazon Neptune (bulk loader JSON). Both keep the original labels/properties.
+3. Load into a graph database → Amazon Neptune (bulk loader JSON) to keep the original labels/properties.
 4. Build embeddings + vector index → Amazon OpenSearch stores embeddings for KNN lookup.
 5. Question answering → we embed the question, pull top vectors(K neighbours) from OpenSearch, expand the graph (Neptune) 1–2 hops (2 layers of GNN) with namespace filters, prune (using PCST algorithm), and feed the trimmed subgraph first to an GNN and then to an LLM for a cited answer.
