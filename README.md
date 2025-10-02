@@ -8,7 +8,7 @@
 - **Pruning**: Apply a PCST-like algorithm to create a compact, evidence-rich subgraph.
 - **Answering**: Feed the subgraph + snippets into an LLM to generate a grounded answer with PMIDs/experiment IDs.
 
-<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
+<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/c978497e-25b2-44d3-980a-0ca070720078" />
 
 ## Methods
 1. Ingest raw exports → we rely on CSVs/TSVs under data/local/primeKG/exports and data/local/pubmedkg/exports.
