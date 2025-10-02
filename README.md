@@ -1,37 +1,59 @@
-## Overview
-Natural language queries using GenAI systems are known to generate hallucinations of facts and may not be able to provide evidence for explanations. For use in biomedical research, GenAI must provide valid and well-grounded results. Therefore, a biomedical system that generates results based on factual biomedical knowledge and publications are needed. 
+# Dual-KG GraphRAG (CKG + PubMedKG)
 
-BioGraphRAG bridges biomedical data and publication knowledge graphs with GraphRAG, based upon the G-retriever architecture, to enhance and ensure that the natural language responses are generated from only information from the knowledge sources.
+This project demonstrates a dual-knowledge-graph workflow that ingests the Clinical Knowledge Graph (CKG) and PubMedKG side-by-side into a single Amazon Neptune cluster. No harmonization or synthetic data generation is performed—each KG keeps its own schema using namespaced labels (`CKG_*`, `PKG_*`). Downstream GraphRAG retrieval performs query-time joins across the two graphs using exact identifier matches and vector similarity.
 
-We tackle biomedical question answering by pairing graph-native retrieval with neural reasoning. For every question, we retrieve a targeted slice of our knowledge graphs and pass that evidence to a graph-aware neural reader. Given a question $Q_i$, we seek an answer set $A_i \subseteq V$ from a large graph $G=(V,E)$. Our pipeline formalizes subgraph retrieval as a Prize-Collecting Steiner Tree (PCST) optimization, then conditions a GNN+LLM reader on the retrieved subgraph. This design reduces hallucinations by grounding in the graph, while scaling beyond a single-context window for dense biomedical domains via structured retrieval, aligning with the GraphRAG patterns described in the NVIDIA technical blog and the G-Retriever paper.
+## Repository layout
 
-**Goal:** Implement a system to use GNNs + LLM to integrate knowledge graphs made from large public datasets with literature to turn a free-text biomedical question into a grounded answer with biomedical information and PMIDs / experiment IDs. 
+- `configs/` – YAML configuration files for ingest, loading, and runtime services.
+- `src/data/` – dataset ingestion utilities that expect pre-exported CSV/TSV files.
+- `src/ingest/` – converters that map raw exports to Neptune bulk-load openCypher CSVs.
+- `src/retrieval/` – GraphRAG expansion, pruning, and vector store helpers.
+- `src/embeddings/` – document and node embedding builders sourcing graph outputs.
+- `docs/dual_kg.md` – detailed explanation of the dual-KG architecture and operations.
 
-## ✨ TL;DR 
-- **Question → Embedding → Retrieval**: Encode the user’s question and fetch top-k seeds from Clinical + Public KGs.
-- **Graph Expansion**: Expand seeds in Neptune with openCypher (1–2 hops, label filters, degree caps).
-- **Pruning**: Apply a PCST-like algorithm to create a compact, evidence-rich subgraph.
-- **Answering**: Feed the subgraph + snippets into an LLM to generate a grounded answer with biomedical information and PMIDs/experiment IDs.
+## Prerequisites
 
-<img width="4997" height="2808" alt="image" src="https://github.com/user-attachments/assets/ce2c7868-cab2-4278-8f3e-987d5200b504" />
+1. Export CKG data (e.g., via Neo4j APOC) into CSV files matching the expected schema.
+2. Download PubMedKG CSV/TSV extracts.
+3. Place files under `data/local/ckg/exports/` and `data/local/pubmedkg/exports/` with filenames configured in `configs/ingest_ckg.yaml` and `configs/ingest_pkg.yaml`.
+4. Provide AWS credentials with permissions for Amazon S3 and Neptune bulk loading.
 
-## Methods
-### Knowledge Graph and Indexing
-Our knowledge graph stores heterogeneous biomedical entities such as drugs, diseases, genes, and proteins, alongside richly typed relationships. Ingestion enforces schema-level guarantees (label-specific uniqueness, referential integrity) and attaches text embeddings to every node. We maintain both semantic indexes (vector similarity) and structural indexes (label/property) so that questions can be seeded semantically while traversals stay performant. Production graphs live in Amazon Neptune with supporting artifacts in Amazon S3, and configuration defaults are kept in `configs/default.yaml` with loaders under `src/ingest/`.
-### Retrieval and Base Subgraph Construction
-Incoming questions are embedded with our text encoder. We identify the top-matching nodes via cosine similarity, then expand their one-hop neighborhoods inside Neptune using IAM-signed openCypher queries that enforce namespace prefixes and degree caps. The result is a base subgraph that balances recall against the combinatorial growth typical in dense biomedical graphs.
-### Prize Assignment and PCST Pruning
-Within the base subgraph we assign a "prize" score to nodes and edges based on three cues: semantic similarity to the question, membership in the original seed set, and curated edge semantics. Traversal costs discourage overly large subgraphs. We then run a prize-collecting Steiner tree procedure that returns a compact, connected subgraph with high total prize. This pruning stage preserves multi-hop evidence while keeping the context manageable for downstream models.
-### Neural Reader: GNN + LLM Integration
-The pruned subgraph passes through a PyTorch Geometric GATv1 encoder to produce node representations that capture multi-hop structure and textual attributes. We serialize the subgraph into an ordered, human-readable description (node names, descriptions, relation types) and feed it—alongside the question and a soft prompt derived from the GNN outputs—into an instruction-tuned large language model. The LLM remains frozen so we benefit from its language fluency while the GNN-derived prompt focuses attention on graph evidence.
-### Training Objectives
-Supervision uses tuples of question, answer nodes, and source subgraphs. Training optimizes two losses jointly: a node-level loss that encourages the model to rank true answers above distractors, and a generation loss that compels the LLM to produce grounded natural-language answers conditioned on the serialized subgraph and soft prompt.
-### Inference
-At inference we return the generated answer together with the top-ranked answer nodes extracted from the subgraph. When recall is critical, we append additional high-prize nodes from the pruned subgraph, effectively ensembling the retrieval and reasoning stages.
-### System Implementation
-Retrieval and pruning logic resides in `src/retrieval/g_retriever.py` and `src/retrieval/expand.py`, while the graph-aware reader and reranking pipeline are implemented in `src/gnn/pyg_rag.py` and orchestrated via `src/rag/pipeline.py`. Neptune remains the source of truth for production graphs, with strict schema validation and uniqueness checks during ingest. Neptune loaders live in `src/ingest/`. Configuration, seeds, and embedding utilities are centralized in `configs/default.yaml`, `src/utils/seed.py`, and `src/embeddings/` respectively.
-### Reproducibility and Evaluation
-We run with fixed random seeds, log every relevant hyperparameter, and evaluate on multi-hop biomedical QA benchmarks using metrics such as hits at K, recall, and mean reciprocal rank. Sensitivity analyses cover the number of retrieved seeds, expansion depth, prize schedules, and pruning strength, echoing the coupled hyperparameter behavior observed in GraphRAG literature.
-### References
-- NVIDIA Technical Blog: Boosting Q&A Accuracy with GraphRAG Using PyG and Graph Databases — see <https://developer.nvidia.com/blog/boosting-qa-accuracy-with-graphrag-using-pyg-and-graph-databases/>
-- G-Retriever: Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering (arXiv:2402.07630) — see <https://arxiv.org/pdf/2402.07630>
+## Quickstart
+
+```bash
+make setup
+make data                 # optional: validates input extracts are present
+make ckg_to_neptune       # writes data/graph/ckg/nodes.csv and edges.csv
+make pkg_to_neptune       # writes data/graph/pkg/nodes.csv and edges.csv
+make load_ckg             # emits Neptune loader JSON for s3://.../graph/ckg/
+make load_pkg             # emits Neptune loader JSON for s3://.../graph/pkg/
+make neo4j_load           # loads both CSV sets into Neo4j (local bolt://)
+```
+
+Upload the generated CSV files to the configured S3 bucket prefixes, then submit the loader JSON payloads to Neptune’s bulk loader API separately for each KG namespace.
+
+For Neo4j-based development, ensure a Neo4j instance is running (e.g., Docker `neo4j:5`) and update credentials in `configs/neo4j.yaml` before running `make neo4j_load`.
+
+## Embeddings and Retrieval
+
+1. Populate OpenSearch vectors and Neptune-expanded subgraphs:
+   ```bash
+   make embed     # builds document & node embeddings from graph outputs
+   make qa        # runs a sample GraphRAG question answering pipeline
+   ```
+2. The retrieval pipeline executes vector KNN against OpenSearch, expands matching nodes up to two hops in Neptune while respecting `CKG_*` and `PKG_*` namespaces, prunes the subgraph, and assembles an LLM answer with citations.
+
+For a Neo4j-only run, use:
+```bash
+make embed
+make qa_neo4j
+```
+
+## API & UI
+
+```bash
+make api         # FastAPI endpoint for QA
+make ui          # Streamlit interface (defaults to port 8501)
+```
+
+See `docs/dual_kg.md` for deeper architectural context, query strategies, and operational guidance.

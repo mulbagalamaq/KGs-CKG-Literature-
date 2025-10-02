@@ -1,0 +1,52 @@
+- id: q1
+  question: >-
+    Which proteomic experiments in CKG report elevated EGFR expression in colon
+    cancer, and what PubMed literature supports the functional relevance?
+  expected_context:
+    - Protein:EGFR
+    - Disease:Colon Cancer
+
+- id: q2
+  question: >-
+    Summarize pathways and findings from CKG experiments that implicate BRAF
+    V600E dysregulation and cite supporting PubMed articles.
+  expected_context:
+    - Protein:BRAF
+    - Pathway:MAPK signaling
+
+- id: q3
+  question: >-
+    Identify interacting proteins for NRAS uncovered in CKG and highlight
+    PubMed evidence discussing resistance mechanisms to targeted inhibitors.
+  expected_context:
+    - Protein:NRAS
+    - Interaction:Protein
+- id: demo-01
+  question: >-
+    Which targeted therapies are supported by CIVIC evidence for BRAF V600E
+    variants, and which TCGA samples show matching variants?
+  expected_context:
+    - Gene:BRAF
+    - Variant:V600E
+    - Disease:Melanoma
+
+- id: demo-02
+  question: >-
+    Summarize EGFR expression patterns in CPTAC RNA-seq data and link relevant
+    PubMed literature mentions supporting therapeutic relevance in colorectal
+    cancer.
+  expected_context:
+    - Gene:EGFR
+    - Disease:Colorectal Cancer
+
+- id: demo-03
+  question: >-
+    What resistance mechanisms involving NRAS Q61 mutations appear in CIVIC
+    evidence and PubMed literature, and how do they connect to MEK inhibitors?
+  expected_context:
+    - Gene:NRAS
+    - Variant:Q61
+    - Drug:MEK inhibitor
+
+
+
