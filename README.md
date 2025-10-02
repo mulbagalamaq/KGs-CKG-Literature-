@@ -6,6 +6,8 @@
 
 ## 🏗️ Architecture (high-level)
 
+## 🏗️ Architecture (high-level)
+
 ```mermaid
 flowchart TD
     UQ["User Q"] --> E[Embedder]
@@ -14,7 +16,7 @@ flowchart TD
     N -->|"expanded 1–2 hops"| P[PCST Pruner (GNN-aware)]
     P -->|"compact subgraph + snippets"| L[LLM Answerer]
     L -->|"grounded answer + citations"| A[Answer]
-
+```
 
 
 
