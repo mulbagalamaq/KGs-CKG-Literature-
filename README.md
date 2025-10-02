@@ -1,25 +1,21 @@
 
-Goal: Implement a system to use GNNs + an LLM over knowledge graphs to integreate literature with knowledge graphs made from large public datasets to turn a free-text biomedical question into a grounded answer with summarized biomedical information and PMIDs / experiment IDs. 
+**Goal:** Implement a system to use GNNs + an LLM over knowledge graphs to integreate literature with knowledge graphs made from large public datasets to turn a free-text biomedical question into a grounded answer with summarized biomedical information and PMIDs / experiment IDs. 
 
 <img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
 
 
-[User Q]
-   │
-   ▼
-[Embedder] ──► [OpenSearch] ──► seeds
-                               │
-                               ▼
-                        [Neptune (openCypher)]
-                               │ expanded 1–2 hops
-                               ▼
-                       [PCST Pruner (GNN-aware)]
-                               │ compact subgraph + snippets
-                               ▼
-                           [LLM Answerer]
-                               │
-                               ▼
-                        grounded answer + citations
+## 🏗️ Architecture (high-level)
+
+```mermaid
+flowchart TD
+    UQ["User Q"] --> E[Embedder]
+    E --> OS[OpenSearch]
+    OS -->|seeds| N[Neptune (openCypher)]
+    N -->|"expanded 1–2 hops"| P[PCST Pruner (GNN-aware)]
+    P -->|"compact subgraph + snippets"| L[LLM Answerer]
+    L -->|"grounded answer + citations"| A[Answer]
+
+
 
 
 🧭 End-to-end flow
@@ -44,36 +40,6 @@ Output a compact, evidence-rich subgraph.
 
 Grounded answer (LLM): Serialize the pruned subgraph + top evidence snippets into a grounded prompt. The LLM must cite PMIDs/experiment IDs and include a short evidence table.
 
-📦 Repository layout
-├── api/                    # FastAPI service (REST)
-│   ├── main.py
-│   ├── routers/
-│   └── schemas.py
-├── pipelines/
-│   ├── embed_and_seed.py   # question → embeddings → OpenSearch seed search
-│   ├── expand_graph.py     # Neptune openCypher expansion
-│   ├── prune_pcst.py       # PCST-like Steiner pruning
-│   ├── ground_and_answer.py# snippets + subgraph → LLM
-│   └── evaluate.py
-├── gnn/
-│   ├── models.py           # GNN encoder/edge scorer
-│   └── train.py
-├── prompts/
-│   └── grounded_answer.md  # system & few-shot templates
-├── ops/
-│   ├── docker-compose.yml
-│   ├── Dockerfile.api
-│   ├── Dockerfile.worker
-│   └── terraform/          # optional IaC for OpenSearch/Neptune
-├── scripts/
-│   ├── index_opensearch.py # create vector indices & ingest docs
-│   ├── neptune_load.py     # bulk load nodes/edges to Neptune
-│   └── demo_query.sh
-├── config/
-│   ├── default.yaml
-│   └── labels.schema.json
-├── tests/
-│   └── ...
-├── README.md
-└── LICENSE
+
+
 
