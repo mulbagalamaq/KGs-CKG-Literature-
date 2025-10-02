@@ -8,7 +8,7 @@
 - **Pruning**: Apply a PCST-like algorithm to create a compact, evidence-rich subgraph.
 - **Answering**: Feed the subgraph + snippets into an LLM to generate a grounded answer with biomedical information and PMIDs/experiment IDs.
 
-<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/c978497e-25b2-44d3-980a-0ca070720078" />
+<img width="4997" height="2808" alt="image" src="https://github.com/user-attachments/assets/8e6ed812-c5a5-4c20-a864-1302693cb417" />
 
 ## Methods
 
