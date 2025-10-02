@@ -10,28 +10,9 @@
 
 <img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
 
-## 🧭** End-to-end flow**
-
-Embed: Encode the user question with a sentence embedding model (e.g., bge-large, text-embedding-3-large) and optionally a domain adapter.
-
-Seed retrieval (OpenSearch): Query two vector indices:
-
-ckg_vectors (curated/clinical KG nodes + doc chunks)
-
-pkg_vectors (public datasets KG nodes + literature chunks)
-Merge top-k seeds with score normalization.
-
-KG expansion (Neptune openCypher): From seeds, expand 1–2 hops with label filters and degree caps to avoid hubs; fetch node/edge attributes and supporting citations.
-
-PCST-like pruning: Run a Prize-Collecting Steiner Tree approximation on the expanded subgraph using:
-
-prizes: seed proximity, evidence count, recency, doc quality
-
-costs: edge weights / degree penalties
-Output a compact, evidence-rich subgraph.
-
-Grounded answer (LLM): Serialize the pruned subgraph + top evidence snippets into a grounded prompt. The LLM must cite PMIDs/experiment IDs and include a short evidence table.
-
-
-
-
+## Methods
+1. Ingest raw exports → we rely on CSVs/TSVs under data/local/primeKG/exports and data/local/pubmedkg/exports.
+2. Convert to graph-ready CSVs → scripts produce data/graph/primekg/ and data/graph/pkg/ directories with nodes.csv + edges.csv.
+3. Load into a graph database → either Amazon Neptune (bulk loader JSON). Both keep the original labels/properties.
+4. Build embeddings + vector index → Amazon OpenSearch stores embeddings for KNN lookup.
+5. Question answering → we embed the question, pull top vectors(K neighbours) from OpenSearch, expand the graph (Neptune) 1–2 hops (2 layers of GNN) with namespace filters, prune (using PCST algorithm), and feed the trimmed subgraph first to an GNN and then to an LLM for a cited answer.
