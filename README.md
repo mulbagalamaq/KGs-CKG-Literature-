@@ -1,5 +1,9 @@
 ## Overview
-We tackle biomedical question answering by pairing graph-native retrieval with neural reasoning. For every question, we retrieve a targeted slice of our knowledge graphs and pass that evidence to a graph-aware neural reader. This design cuts hallucinations and keeps the system scalable for dense biomedical domains, aligning with the GraphRAG patterns described in the NVIDIA technical blog and the G-Retriever paper.
+Natural language queries using GenAI systems are known to generate hallucinations of facts and may not be able to provide evidence for explanations. For use in biomedical research, GenAI must provide valid and well-grounded results. Therefore, a biomedical system that generates results based on factual biomedical knowledge and publications are needed. 
+
+DualBioGraphRAG bridges biomedical data and publication knowledge graphs with GraphRAG, based upon the G-retriever architecture, to enhance and ensure that the natural language responses are generated from only information from the knowledge sources.
+
+We tackle biomedical question answering by pairing graph-native retrieval with neural reasoning. For every question, we retrieve a targeted slice of our knowledge graphs and pass that evidence to a graph-aware neural reader. Given a question $Q_i$, we seek an answer set $A_i \subseteq V$ from a large graph $G=(V,E)$. Our pipeline formalizes subgraph retrieval as a Prize-Collecting Steiner Tree (PCST) optimization, then conditions a GNN+LLM reader on the retrieved subgraph. This design reduces hallucinations by grounding in the graph, while scaling beyond a single-context window for dense biomedical domains via structured retrieval, aligning with the GraphRAG patterns described in the NVIDIA technical blog and the G-Retriever paper.
 
 **Goal:** Implement a system to use GNNs + LLM to integrate knowledge graphs made from large public datasets with literature to turn a free-text biomedical question into a grounded answer with biomedical information and PMIDs / experiment IDs. 
 
