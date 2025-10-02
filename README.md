@@ -1,7 +1,8 @@
 
 Implement a system to use GNN and LLM to use knowledge graphs to integrate literature with knowledge graphs made from large public datasets 
 
-<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/48a6981f-56c9-4bce-b735-c9a426fbf9e7" />
+<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/9f274f12-ac4f-48e0-81c9-174de8731681" />
+
 
 
 # WORK IN PROGRESS
