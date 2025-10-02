@@ -20,7 +20,7 @@ For production, the graph is persisted in Amazon Neptune with artifacts stored i
 
 ### Retrieval and base subgraph construction
 For each question $Q_i$, we compute its embedding $\mathbf{q}_i$ and retrieve top-$k$ seed nodes $S_i \subset V$ via vector similarity:
-$$S_i = \operatorname*{arg\,topk}_{v \in V}\ \cos(\mathbf{q}_i,\mathbf{x}_v)$$.
+$S_i = \operatorname*{arg\,topk}_{v \in V}\ \cos(\mathbf{q}_i,\mathbf{x}_v)$.
 We expand the 1–h neighborhood (optionally typed/filtered) around $S_i$ to induce a base subgraph $G_i=(V_i,E_i)$. This balances recall and tractability in dense biomedical regions.
 
 ### Prize assignment and PCST pruning
