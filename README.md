@@ -17,12 +17,12 @@ We construct a heterogeneous biomedical KG with node labels (for example, Drug, 
 - a vector index (cosine similarity) over node embeddings for semantic seeding, and
 - graph-native indices (labels/properties) for efficient neighborhood expansion.
 For production, the graph is persisted in Amazon Neptune with artifacts stored in Amazon S3; Neo4j can be used for local workflows. Configuration is managed in `configs/default.yaml`, and graph loaders reside in `src/ingest/`.
-
 ### Retrieval and base subgraph construction
-For each question $Q_i$, we compute its embedding $\mathbb{q}_i$ and retrieve top-$k$ seed nodes $S_i \subset V$ via vector similarity:
-$S_i = \mathbb{I}\operatorname*{arg\,topk}_{v \in V}\ \cos(\mathbf{q}_i,\mathbf{x}_v)$.
+For each question $Q_i$, we compute its embedding $\mathbf{q}_i$ and retrieve top-$k$ seed nodes $S_i \subset V$ via vector similarity:
+$$
+S_i = \operatorname*{arg\,topk}_{v \in V}\ \cos(\mathbf{q}_i,\mathbf{x}_v).
+$$
 We expand the 1–h neighborhood (optionally typed/filtered) around $S_i$ to induce a base subgraph $G_i=(V_i,E_i)$. This balances recall and tractability in dense biomedical regions.
-
 ### Prize assignment and PCST pruning
 We assign node and edge prizes based on semantic alignment to the question and structural roles:
 $$
