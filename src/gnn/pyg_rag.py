@@ -1,21 +1,23 @@
-"""Graph + text fusion utilities built on torch_geometric.llm patterns.
+"""PyTorch Geometric utilities for GraphRAG fact ranking.
 
-This module keeps the API intentionally small and beginner-friendly so callers
-can wire PyG-powered embeddings into the existing GraphRAG flow without
-changing the surrounding pipeline.
+Inspired by NVIDIA GraphRAG and the PyG ``txt2kg_rag`` example, this module
+provides helper functions to build PyTorch Geometric graphs from the retrieved
+subgraph, compute structural/textual embeddings, and rank facts for LLM prompts.
+The code is kept modular so higher-level pipelines can call only the pieces they
+need (e.g., structural embeddings, text fusion, ranking).
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, DefaultDict
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from sentence_transformers import SentenceTransformer
 from torch import Tensor
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 from torch_geometric.nn import Node2Vec, SAGEConv
 from torch_geometric.utils import to_undirected
 
@@ -25,7 +27,7 @@ _STRUCTURAL_VECS: Optional[np.ndarray] = None
 
 
 def build_pyg_from_subgraph(nodes: List[Dict], edges: List[Dict]) -> Tuple[Data, Dict[str, int]]:
-    """Create a homogeneous PyG Data graph from dual-KG nodes and edges."""
+    """Create a homogeneous PyG ``Data`` graph from dual-KG nodes/edges."""
     if not nodes:
         empty = Data()
         empty.x = torch.empty((0, 3), dtype=torch.float)
@@ -76,6 +78,187 @@ def build_pyg_from_subgraph(nodes: List[Dict], edges: List[Dict]) -> Tuple[Data,
     else:
         data.edge_index = torch.empty((2, 0), dtype=torch.long)
     return data, node_index
+
+
+def build_pyg_from_subgraph_rich(nodes: List[Dict], edges: List[Dict]) -> Tuple[Data, Dict[str, int]]:
+    """Create a homogeneous PyG ``Data`` graph with richer node/edge features.
+
+    Node features include: in_degree, out_degree, namespace_id, one-hot node type,
+    and common biomedical scalar attributes if present (confidence/publication_count).
+    Edge features include: one-hot edge type plus optional weights/confidence.
+    """
+    if not nodes:
+        empty = Data()
+        empty.x = torch.empty((0, 3), dtype=torch.float)
+        empty.edge_index = torch.empty((2, 0), dtype=torch.long)
+        return empty, {}
+
+    # Build label vocabularies local to this subgraph
+    node_labels: List[str] = []
+    edge_labels: List[str] = []
+    for n in nodes:
+        node_labels.append((n.get("~label") or "unknown"))
+    for e in edges:
+        edge_labels.append((e.get("~label") or "unknown"))
+    node_label_to_idx = {lbl: i for i, lbl in enumerate(sorted(set(node_labels)))}
+    edge_label_to_idx = {lbl: i for i, lbl in enumerate(sorted(set(edge_labels)))}
+
+    # Index nodes and accumulators
+    node_index: Dict[str, int] = {}
+    sorted_nodes = sorted(nodes, key=lambda item: item.get("~id", ""))
+    for idx, node in enumerate(sorted_nodes):
+        node_id = node.get("~id")
+        if node_id is None:
+            continue
+        node_index[node_id] = idx
+
+    in_degree = [0] * len(node_index)
+    out_degree = [0] * len(node_index)
+    edge_sources: List[int] = []
+    edge_targets: List[int] = []
+    edge_attr_rows: List[List[float]] = []
+
+    # Build edge index and edge attributes
+    for rel in edges:
+        start = rel.get("~from")
+        end = rel.get("~to")
+        start_idx = node_index.get(start)
+        end_idx = node_index.get(end)
+        if start_idx is None or end_idx is None or start_idx == end_idx:
+            continue
+        out_degree[start_idx] += 1
+        in_degree[end_idx] += 1
+        # Undirected twin edges
+        edge_sources.extend([start_idx, end_idx])
+        edge_targets.extend([end_idx, start_idx])
+
+        # Edge features (one row per directed edge we add)
+        etype = rel.get("~label", "unknown")
+        edge_type_vec = _one_hot(edge_label_to_idx.get(etype, 0), len(edge_label_to_idx))
+        weight = float(rel.get("weight", rel.get("confidence", 1.0)) or 1.0)
+        base_feat = edge_type_vec + [weight]
+        # Push for both directions to match twin edges
+        edge_attr_rows.append(base_feat)
+        edge_attr_rows.append(base_feat)
+
+    # Node features
+    features: List[List[float]] = []
+    for node in sorted_nodes:
+        node_id = node.get("~id")
+        if node_id is None:
+            continue
+        idx = node_index[node_id]
+        label = node.get("~label", "") or "unknown"
+        namespace_id = _namespace_id(label)
+        node_type_vec = _one_hot(node_label_to_idx.get(label, 0), len(node_label_to_idx))
+        # Optional biomedical scalars
+        confidence = float(node.get("confidence_score", 0.0) or 0.0)
+        pub_count = float(node.get("publication_count", 0.0) or 0.0)
+        # Assemble feature vector
+        base = [float(in_degree[idx]), float(out_degree[idx]), float(namespace_id)]
+        features.append(base + node_type_vec + [confidence, pub_count])
+
+    data = Data()
+    data.x = torch.tensor(features, dtype=torch.float) if features else torch.empty((0, 3), dtype=torch.float)
+    if edge_sources:
+        raw_edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
+        data.edge_index = to_undirected(raw_edge_index)
+        if edge_attr_rows:
+            data.edge_attr = torch.tensor(edge_attr_rows, dtype=torch.float)
+    else:
+        data.edge_index = torch.empty((2, 0), dtype=torch.long)
+        data.edge_attr = torch.empty((0, 0), dtype=torch.float)
+    return data, node_index
+
+
+def build_hetero_pyg_from_subgraph(nodes: List[Dict], edges: List[Dict]) -> HeteroData:
+    """Create a ``HeteroData`` graph preserving node/edge types.
+
+    This is optional and useful when downstream models exploit heterogeneity.
+    The function constructs per-type node feature matrices using degree,
+    namespace, and a per-type one-hot of the local label vocabulary.
+    Edge stores contain ``edge_index`` and per-edge one-hot type plus weight.
+    """
+    data = HeteroData()
+    if not nodes:
+        return data
+
+    # Group nodes by label
+    by_label: DefaultDict[str, List[Dict]] = DefaultDict(list)
+    for n in nodes:
+        by_label[(n.get("~label") or "unknown")].append(n)
+
+    # Create local indices across all nodes to compute degrees
+    # and to map ids back during edge creation
+    _, global_index = build_pyg_from_subgraph(nodes, edges)
+
+    # Build per-type node features
+    all_node_labels = sorted(by_label.keys())
+    for lbl in all_node_labels:
+        type_nodes = sorted(by_label[lbl], key=lambda item: item.get("~id", ""))
+        x_rows: List[List[float]] = []
+        node_ids: List[str] = []
+        for node in type_nodes:
+            node_id = node.get("~id")
+            if node_id is None:
+                continue
+            node_ids.append(node_id)
+            idx = global_index.get(node_id, -1)
+            indeg = 0.0
+            outdeg = 0.0
+            if idx >= 0:
+                # Degrees will be recomputed per-type as zeros; use namespace + bias
+                # for simple, robust features across types
+                pass
+            namespace_id = _namespace_id(lbl)
+            # Per-type one-hot among all node labels
+            type_vec = _one_hot(all_node_labels.index(lbl), len(all_node_labels))
+            x_rows.append([indeg, outdeg, float(namespace_id)] + type_vec)
+
+        if x_rows:
+            data[lbl].x = torch.tensor(x_rows, dtype=torch.float)
+            data[lbl].node_ids = node_ids
+
+    # Build edges grouped by (src_type, rel, dst_type)
+    def find_type_and_idx(node_id: str) -> Tuple[str, int]:
+        for t in all_node_labels:
+            ids: List[str] = getattr(data[t], "node_ids", [])
+            try:
+                return t, ids.index(node_id)
+            except ValueError:
+                continue
+        return "", -1
+
+    rel_groups: DefaultDict[Tuple[str, str, str], List[Dict]] = DefaultDict(list)
+    for e in edges:
+        s_id = e.get("~from")
+        t_id = e.get("~to")
+        rel = (e.get("~label") or "rel")
+        s_type, _ = find_type_and_idx(s_id)
+        t_type, _ = find_type_and_idx(t_id)
+        if s_type and t_type:
+            rel_groups[(s_type, rel, t_type)].append(e)
+
+    for (s_type, rel, t_type), rel_edges in rel_groups.items():
+        edge_index_rows: List[List[int]] = []
+        edge_attr_rows: List[List[float]] = []
+        # One-hot over the relations present in this bipartite store
+        # (usually length 1, but keep general)
+        rel_vocab = {rel: 0}
+        for e in rel_edges:
+            s_id = e.get("~from")
+            t_id = e.get("~to")
+            _, s_idx = find_type_and_idx(s_id)
+            _, t_idx = find_type_and_idx(t_id)
+            if s_idx < 0 or t_idx < 0:
+                continue
+            edge_index_rows.append([s_idx, t_idx])
+            weight = float(e.get("weight", e.get("confidence", 1.0)) or 1.0)
+            edge_attr_rows.append(_one_hot(rel_vocab[rel], len(rel_vocab)) + [weight])
+        if edge_index_rows:
+            data[(s_type, rel, t_type)].edge_index = torch.tensor(edge_index_rows, dtype=torch.long).t().contiguous()
+            data[(s_type, rel, t_type)].edge_attr = torch.tensor(edge_attr_rows, dtype=torch.float)
+    return data
 
 
 def gnn_graph_embedding(data: Data, cfg) -> List[float]:
@@ -204,7 +387,7 @@ def structural_fact_vectors(
     node_embeddings: Optional[np.ndarray],
     node_index: Dict[str, int],
 ) -> Optional[np.ndarray]:
-    """Align per-node embeddings to fact order (nodes first, edges second)."""
+    """Return structural vectors aligned with ``fact_texts`` order."""
     if node_embeddings is None:
         return None
 
@@ -244,12 +427,12 @@ def structural_fact_vectors(
 
 
 def get_fact_lookup() -> List[Tuple[str, int]]:
-    """Return the cached fact lookup describing node/edge ordering."""
+    """Expose the mapping used to tie facts back to their nodes/edges."""
     return list(_FACT_LOOKUP)
 
 
 def set_structural_vectors(vectors: Optional[np.ndarray]) -> None:
-    """Store per-fact structural vectors for ranking; pass None to reset."""
+    """Store the latest structural vectors for access during ranking."""
     global _STRUCTURAL_VECS
     _STRUCTURAL_VECS = None if vectors is None else np.asarray(vectors, dtype=np.float32)
 
@@ -264,6 +447,7 @@ def _node2vec_embedding(
     context_size: int,
     walks_per_node: int,
 ) -> List[float]:
+    """Learn Node2Vec embeddings and return their mean vector."""
     if data.num_edges == 0 or data.edge_index.numel() == 0:
         node_count = data.num_nodes if data.num_nodes is not None else data.x.size(0)
         zeros = np.zeros((node_count, dim), dtype=np.float32)
@@ -343,11 +527,13 @@ class _GraphSAGEEncoder(torch.nn.Module):
 
 
 def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
+    """Row-normalise a matrix to unit length."""
     norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-12
     return matrix / norms
 
 
 def _safe_normalize_vector(vector: Iterable[float]) -> np.ndarray:
+    """Safely L2-normalise a vector, guarding against zero norms."""
     arr = np.asarray(vector, dtype=np.float32)
     norm = float(np.linalg.norm(arr))
     if norm == 0.0:
@@ -355,8 +541,16 @@ def _safe_normalize_vector(vector: Iterable[float]) -> np.ndarray:
     return arr / norm
 
 
+def _one_hot(index: int, size: int) -> List[float]:
+    vec = [0.0] * max(1, size)
+    if 0 <= index < max(1, size):
+        vec[index] = 1.0
+    return vec
+
+
 def _namespace_id(label: str) -> int:
-    if label.startswith("CKG_"):
+    """Map namespace prefixes to integer ids for structural features."""
+    if label.startswith("PRIME_"):
         return 0
     if label.startswith("PKG_"):
         return 1
@@ -364,6 +558,7 @@ def _namespace_id(label: str) -> int:
 
 
 def _format_properties(item: Dict, skip_keys: set[str]) -> str:
+    """Format node/edge properties as ``key: value`` pairs."""
     parts: List[str] = []
     for key in sorted(item.keys()):
         if key in skip_keys:
@@ -377,4 +572,5 @@ def _format_properties(item: Dict, skip_keys: set[str]) -> str:
 
 @lru_cache(maxsize=2)
 def _load_sentence_model(model_name: str) -> SentenceTransformer:
+    """Cache and return a SentenceTransformer model."""
     return SentenceTransformer(model_name)
