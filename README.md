@@ -1,7 +1,8 @@
-# KGs_plus_Literature
-Implement a system to use GNN and/or LLM to use knowledge graphs to integrate literature with knowledge graphs made from large public datasets (CIVIC, TCGA, CPTAC)
 
-<img width="914" height="488" alt="image" src="https://github.com/user-attachments/assets/4f1bb8e9-783c-4c61-906b-e0fb60d7d065" />
+Implement a system to use GNN and LLM to use knowledge graphs to integrate literature with knowledge graphs made from large public datasets 
+
+<img width="4624" height="2838" alt="image" src="https://github.com/user-attachments/assets/48a6981f-56c9-4bce-b735-c9a426fbf9e7" />
+
 
 # WORK IN PROGRESS
 Question → embed → OpenSearch top‑k seeds (across both CKG and PKG vectors).
