@@ -1,4 +1,4 @@
-"""Utilities to compute text/document embeddings from dual CKG + PubMedKG graphs."""
+"""Utilities to compute text/document embeddings from dual PrimeKG + PubMedKG graphs."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def build_document_embeddings(config_path: str) -> Path:
+    """Generate text embeddings for PrimeKG + PubMedKG documents."""
+
     cfg = load_config(config_path)
     seed_everything()
 
@@ -27,7 +29,7 @@ def build_document_embeddings(config_path: str) -> Path:
 
     docs = _collect_documents(cfg)
     if not docs:
-        raise ValueError("No publications or findings available for text embeddings.")
+        raise ValueError("No documents available for text embedding. Ensure PrimeKG and PubMedKG CSVs exist.")
 
     texts = [doc["text"] for doc in docs]
     embeddings = model.encode(texts, show_progress_bar=False)
@@ -44,7 +46,9 @@ def build_document_embeddings(config_path: str) -> Path:
 
 
 def _collect_documents(cfg) -> List[dict]:
+    """Collect PrimeKG nodes and PubMedKG publications to encode."""
     docs: List[dict] = []
+
     pkg_nodes = Path(cfg.get("pkg_ingest.output_dir", "data/graph/pkg")) / "nodes.csv"
     if not pkg_nodes.exists():
         raise FileNotFoundError(f"PubMedKG nodes CSV missing: {pkg_nodes}")
@@ -53,38 +57,39 @@ def _collect_documents(cfg) -> List[dict]:
     publications = publications[publications["~label"] == "PKG_Publication"]
     for _, row in publications.iterrows():
         pmid = row["~id"]
-        text_parts = ["PKG_Publication"]
-        for column, value in row.items():
-            if column in {"~id", "~label"}:
-                continue
-            if pd.isna(value):
-                continue
-            text_parts.append(f"{column}: {value}")
-        text = " | ".join(text_parts)
+        text = _row_to_text("PKG_Publication", row)
         docs.append({"id": f"PKG::{pmid}", "text": text, "type": "PKG_Publication"})
 
-    ckg_nodes = Path(cfg.get("ckg_ingest.output_dir", "data/graph/ckg")) / "nodes.csv"
-    if not ckg_nodes.exists():
-        raise FileNotFoundError(f"CKG nodes CSV missing: {ckg_nodes}")
+    prime_nodes = Path(cfg.get("prime_ingest.output_dir", "data/graph/prime")) / "nodes.csv"
+    if not prime_nodes.exists():
+        raise FileNotFoundError(f"PrimeKG nodes CSV missing: {prime_nodes}")
 
-    findings = pd.read_csv(ckg_nodes)
-    findings = findings[findings["~label"] == "CKG_Finding"]
-    for _, row in findings.iterrows():
-        finding_id = row["~id"]
-        text_parts = ["CKG_Finding"]
-        for column, value in row.items():
-            if column in {"~id", "~label"}:
-                continue
-            if pd.isna(value):
-                continue
-            text_parts.append(f"{column}: {value}")
-        text = " | ".join(text_parts)
-        docs.append({"id": f"CKG::{finding_id}", "text": text, "type": "CKG_Finding"})
+    prime_df = pd.read_csv(prime_nodes)
+    prime_df["~label"] = prime_df["~label"].astype(str)
+    prime_df = prime_df[prime_df["~label"].str.startswith("PRIME_")]
+    for _, row in prime_df.iterrows():
+        node_id = row["~id"]
+        label = row.get("~label", "PRIME_Entity")
+        text = _row_to_text(label, row)
+        docs.append({"id": f"PRIME::{node_id}", "text": text, "type": label})
 
     return docs
 
 
+def _row_to_text(label: str, row: pd.Series) -> str:
+    """Serialise properties into a pipe-delimited string for embedding."""
+    parts = [label]
+    for column, value in row.items():
+        if column in {"~id", "~label"}:
+            continue
+        if pd.isna(value):
+            continue
+        parts.append(f"{column}: {value}")
+    return " | ".join(parts)
+
+
 def main() -> None:
+    """CLI entry point for building document embeddings."""
     parser = argparse.ArgumentParser(description="Build document embeddings")
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
@@ -94,4 +99,3 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     main()
-

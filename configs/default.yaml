@@ -1,9 +1,14 @@
-# Configuration for the CKG + PubMedKG GraphRAG project.
+# Configuration for the dual bio graph rag project.
 
 project:
-  name: dual-kg-graphrag
+  name: dual-bio-graph-rag
   region: us-east-1
   environment: dev
+
+graph:
+  backend: neptune
+  id_property: "~id"
+  label_prefixes: ["PRIME_", "PKG_"]
 
 paths:
   local_data_dir: data/local
@@ -21,6 +26,8 @@ s3:
 
 neptune:
   endpoint: https://example.cluster-ro-id.neptune.amazonaws.com:8182
+  use_iam_auth: true
+  opencypher_path: "/opencypher"
   iam_role_arn: arn:aws:iam::123456789012:role/NeptuneLoadFromS3
   graph_format: openCypher
   max_concurrency: 2
@@ -30,6 +37,8 @@ open_search:
   collection_name: dual-kg-vectors
   index_name: graphrag_nodes
   embedding_dimension: 768
+  use_iam_auth: true
+  service: aoss
 
 embedding_model:
   document_model: sentence-transformers/all-MiniLM-L12-v2
@@ -61,14 +70,16 @@ retrieval:
   prune_max_degree: 10
   namespaces:
     include:
-      - CKG_
+      - PRIME_
       - PKG_
 
-ckg_ingest:
-  input_dir: data/local/ckg/processed
-  output_dir: data/graph/ckg
-  nodes_glob: ckg_nodes_*.csv
-  relationships_glob: ckg_relationships_*.csv
+prime_ingest:
+  input_dir: data/local/primekg/exports
+  output_dir: data/graph/prime
+  edges_file: kg.csv           # optional: PrimeKG edge list (x_id,y_id,x_type,y_type,relation)
+  nodes_file:                  # optional: if present, use nodes_file + edges_file (fallback to edges-only)
+  nodes_glob: prime_nodes_*.csv
+  relationships_glob: prime_edges_*.csv
 
 pkg_ingest:
   input_dir: data/local/pubmedkg/processed
@@ -83,7 +94,7 @@ neptune_loader:
 
 vector_store:
   include_types:
-    - CKG_* 
+    - PRIME_* 
     - PKG_*
 
 app:

@@ -11,7 +11,7 @@ import torch
 
 def seed_everything(seed: int | None = None) -> int:
     if seed is None:
-        env_seed = os.environ.get("CKG_RAG_SEED")
+    env_seed = os.environ.get("DUAL_KG_RAG_SEED")
         seed = int(env_seed) if env_seed else 42
 
     random.seed(seed)

@@ -1,4 +1,4 @@
-"""Root package for CKG + PubMedKG GraphRAG project."""
+"""Root package for dual bio graph rag (PrimeKG + PubMedKG) project."""
 
 __all__ = []
 

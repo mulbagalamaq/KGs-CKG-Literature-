@@ -12,15 +12,13 @@ import numpy as np
 import requests
 from sentence_transformers import SentenceTransformer
 
-from src.gnn.pyg_rag import (
-    build_pyg_from_subgraph,
-    encode_texts,
-    fuse_vectors,
-    gnn_graph_embedding,
-    rank_facts,
-    set_structural_vectors,
-    structural_fact_vectors,
-    textify_subgraph,
+from src.rag.pipeline import (
+    encode_question,
+    vector_seed,
+    expand_graph,
+    prune_graph,
+    pyg_fusion,
+    assemble_prompt,
 )
 from src.qa.prompt import build_prompt
 from src.retrieval.g_retriever import initialize_vector_store, retrieve_graph_context
@@ -32,79 +30,122 @@ LOGGER = logging.getLogger(__name__)
 
 
 def answer_question(config_path: str, question: str) -> Dict:
-    """Return answer dict with optional PyG-enhanced ranking."""
+    """Run the GraphRAG pipeline end-to-end and return answer + evidence.
+
+    Parameters
+    ----------
+    config_path:
+        Path to a YAML config file containing retrieval, PyG, LLM, and
+        connection parameters.
+    question:
+        Natural-language question supplied by the user.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the original question, the LLM answer text,
+        the prompt that was sent, and the nodes/edges/evidence gathered during
+        retrieval.
+
+    Notes
+    -----
+    The function performs the following steps:
+    1. Load configuration & seed random number generators.
+    2. Encode the question into a dense vector.
+    3. Retrieve vector seeds via OpenSearch.
+    4. Expand and prune the graph neighbourhood around the seeds.
+    5. Apply PyTorch Geometric fusion to rank the most relevant facts.
+    6. Assemble the final prompt and call the target LLM.
+    """
+
     seed_everything()
     cfg = load_config(config_path)
+
+    # Encode question -----------------------------------------------------
     model_name = cfg.get("embedding_model.document_model", "sentence-transformers/all-MiniLM-L12-v2")
-    model = SentenceTransformer(model_name)
-    question_vector = model.encode([question], show_progress_bar=False)[0].tolist()
+    question_vector = encode_question(model_name, question)
 
-    retrieval = retrieve_graph_context(config_path, question_vector)
-    nodes = retrieval["nodes"]
-    edges = retrieval["edges"]
+    # Vector seeds → expand → prune ---------------------------------------
+    top_k = cfg.get("retrieval.top_k", 8)
+    hops = cfg.get("retrieval.expansion_hops", 2)
+    max_degree = cfg.get("retrieval.prune_max_degree", 10)
+    max_nodes = cfg.get("retrieval.prune_max_nodes", 40)
 
-    prompt_nodes = nodes
-    prompt_edges = edges
-    fact_texts: List[str] = []
+    hits = vector_seed(config_path, question_vector, top_k)
+    if not hits:
+        LOGGER.warning("Vector search returned no candidates for question: %s", question)
+        return {
+            "question": question,
+            "answer": "No relevant context found.",
+            "prompt": "",
+            "nodes": [],
+            "edges": [],
+            "evidence": [],
+        }
 
-    if cfg.get("pyg_rag", {}).get("enabled", True):
-        try:
-            fact_texts = textify_subgraph(nodes, edges)
-            if fact_texts:
-                data, node_index = build_pyg_from_subgraph(nodes, edges)
-                gnn_vec = np.asarray(gnn_graph_embedding(data, cfg), dtype=np.float32)
+    seed_ids = [hit["id"].split("::")[-1] for hit in hits if "id" in hit]
+    nodes, edges = expand_graph(config_path, seed_ids, hops, max_degree)
+    nodes, edges = prune_graph(nodes, edges, max_nodes)
 
-                combined_text = [" ".join(fact_texts)]
-                llm_matrix = encode_texts(combined_text, cfg)
-                llm_vec = llm_matrix[0] if llm_matrix.shape[0] else np.zeros((model.get_sentence_embedding_dimension(),), dtype=np.float32)
+    if not nodes:
+        LOGGER.warning("Graph expansion produced no nodes for question: %s", question)
+        return {
+            "question": question,
+            "answer": "No relevant context found after expansion.",
+            "prompt": "",
+            "nodes": [],
+            "edges": [],
+            "evidence": hits,
+        }
 
-                node_embeddings = None
-                if hasattr(data, "node_embeddings"):
-                    node_embeddings = data.node_embeddings.detach().cpu().numpy()
-                struct_vectors = structural_fact_vectors(nodes, edges, node_embeddings, node_index)
-                set_structural_vectors(struct_vectors)
+    # Mandatory PyG fusion -----------------------------------------------
+    top_facts = cfg.get("pyg_rag", {}).get("top_facts", 40)
+    nodes, edges = pyg_fusion(cfg, nodes, edges, top_facts)
 
-                fused = fuse_vectors(gnn_vec, llm_vec)
-
-                ranked_indices = rank_facts(fused, fact_texts, cfg)
-                top_facts = cfg.get("pyg_rag", {}).get("top_facts", 40)
-                top_indices = ranked_indices[:top_facts]
-                prompt_nodes, prompt_edges = _filter_facts_by_indices(top_indices, nodes, edges)
-                LOGGER.info("PyG fusion selected %s facts for prompt", len(top_indices))
-            else:
-                LOGGER.info("PyG fusion skipped: empty fact list")
-        except Exception as exc:  # pragma: no cover - fallback safety
-            LOGGER.warning("PyG fusion failed (%s); falling back to baseline", exc)
-        finally:
-            set_structural_vectors(None)
-
-    prompt = build_prompt(question, prompt_nodes, prompt_edges, retrieval["evidence"])
+    # Prompt & LLM completion --------------------------------------------
+    prompt = assemble_prompt(question, nodes, edges, hits)
 
     api_base = cfg.get("llm.api_base")
+    if not api_base:
+        raise ValueError("llm.api_base must be set in the configuration")
+
     api_key = cfg.get("llm.api_key")
     temperature = cfg.get("llm.temperature", 0.2)
     max_tokens = cfg.get("llm.max_new_tokens", 512)
-    model_name = cfg.get("llm.model_name")
+    llm_model = cfg.get("llm.model_name")
 
     headers = {"Content-Type": "application/json"}
     if api_key and api_key != "changeme":
         headers["Authorization"] = f"Bearer {api_key}"
 
     payload = {
-        "model": model_name,
+        "model": llm_model,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "messages": [
             {
                 "role": "system",
-                "content": "You are a biomedical assistant. Provide concise answers with experiment IDs and PMIDs as citations.",
+                "content": (
+                    "You are a biomedical assistant. Provide concise answers with"
+                    " experiment IDs and PMIDs as citations."
+                ),
             },
             {"role": "user", "content": prompt},
         ],
     }
 
-    response = requests.post(f"{api_base}/chat/completions", headers=headers, data=json.dumps(payload), timeout=60)
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            f"{api_base}/chat/completions",
+            headers=headers,
+            data=json.dumps(payload),
+            timeout=60,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        LOGGER.error("LLM request failed: %s", exc)
+        raise
+
     data = response.json()
     answer_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
@@ -112,9 +153,9 @@ def answer_question(config_path: str, question: str) -> Dict:
         "question": question,
         "answer": answer_text,
         "prompt": prompt,
-        "nodes": prompt_nodes,
-        "edges": prompt_edges,
-        "evidence": retrieval["evidence"],
+        "nodes": nodes,
+        "edges": edges,
+        "evidence": hits,
     }
 
 
@@ -144,6 +185,8 @@ def _filter_facts_by_indices(indices: List[int], nodes: List[Dict], edges: List[
 
 
 def main() -> None:
+    """Entry point for CLI usage."""
+
     parser = argparse.ArgumentParser(description="Run GraphRAG QA pipeline")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--question-file", default="configs/demo_questions.yaml")

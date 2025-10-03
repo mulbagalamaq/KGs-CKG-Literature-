@@ -1,4 +1,4 @@
-"""FastAPI service for GraphRAG question answering."""
+"""FastAPI service for dual bio graph rag question answering."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI
 
-app = FastAPI(title="CKG GraphRAG QA")
+app = FastAPI(title="dual bio graph rag QA")
 LOGGER = logging.getLogger(__name__)
 
 

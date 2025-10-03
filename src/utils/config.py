@@ -32,7 +32,7 @@ def load_config(path: str | Path, overrides: Optional[Dict[str, Any]] = None) ->
     with cfg_path.open("r", encoding="utf-8") as handle:
         data: Dict[str, Any] = yaml.safe_load(handle) or {}
 
-    env_prefix = "CKG_RAG_"
+    env_prefix = "DUAL_KG_RAG_"
     for key, value in os.environ.items():
         if not key.startswith(env_prefix):
             continue

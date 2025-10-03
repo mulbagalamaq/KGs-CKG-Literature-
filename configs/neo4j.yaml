@@ -1,7 +1,5 @@
-# Configuration for dual-KG GraphRAG running against Neo4j.
-
 project:
-  name: dual-kg-graphrag-neo4j
+  name: dual-bio-graph-rag-neo4j
   region: us-east-1
   environment: dev
 
@@ -54,14 +52,16 @@ retrieval:
   prune_max_degree: 10
   namespaces:
     include:
-      - CKG_
+      - PRIME_
       - PKG_
 
-ckg_ingest:
-  input_dir: data/local/ckg/exports
-  output_dir: data/graph/ckg
-  nodes_glob: ckg_nodes_*.csv
-  relationships_glob: ckg_relationships_*.csv
+prime_ingest:
+  input_dir: data/local/primekg/exports
+  output_dir: data/graph/prime
+  edges_file: kg.csv
+  nodes_file: ''
+  nodes_glob: prime_nodes_*.csv
+  relationships_glob: prime_edges_*.csv
 
 pkg_ingest:
   input_dir: data/local/pubmedkg/exports
@@ -73,6 +73,11 @@ pkg_ingest:
 neptune_loader:
   output_dir: configs
   file_name_prefix: neptune_loader
+
+vector_store:
+  include_types:
+    - PRIME_*
+    - PKG_*
 
 app:
   demo_questions: configs/demo_questions.yaml

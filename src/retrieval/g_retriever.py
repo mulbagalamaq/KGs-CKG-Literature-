@@ -10,7 +10,6 @@ import pandas as pd
 from src.embeddings.text_embed import build_document_embeddings
 from src.embeddings.node_embed import build_node_embeddings
 from src.retrieval.vector_store import create_index, query_vectors, upsert_vectors
-from src.retrieval.expand import expand_subgraph
 from src.retrieval.prune import prune_subgraph
 from src.utils.config import load_config
 from src.utils.seed import seed_everything
@@ -20,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def initialize_vector_store(config_path: str) -> None:
+    """Create the OpenSearch index and populate it with graph embeddings."""
+
     seed_everything()
     cfg = load_config(config_path)
 
@@ -57,6 +58,8 @@ def initialize_vector_store(config_path: str) -> None:
 
 
 def retrieve_graph_context(config_path: str, question_embedding: List[float]) -> Dict[str, List[Dict]]:
+    """Expand and prune the neighbourhood around vector-seed candidates."""
+
     cfg = load_config(config_path)
     top_k = cfg.get("retrieval.top_k", 8)
     hops = cfg.get("retrieval.expansion_hops", 2)
@@ -67,7 +70,8 @@ def retrieve_graph_context(config_path: str, question_embedding: List[float]) ->
     seed_ids = [hit["id"].split("::")[-1] for hit in hits]
     LOGGER.info("Vector hits: %s", seed_ids)
 
-    expansion = expand_subgraph(config_path, seed_ids, hops=hops, max_degree=max_degree)
+    expand_fn = _get_expander(config_path)
+    expansion = expand_fn(config_path, seed_ids, hops=hops, max_degree=max_degree)
     nodes = [entry for result in expansion for entry in result.get("nodes", [])]
     edges = [entry for result in expansion for entry in result.get("rels", [])]
 
@@ -82,15 +86,29 @@ def retrieve_graph_context(config_path: str, question_embedding: List[float]) ->
 
 
 def _load_embeddings(path: str | Path):
+    """Load the embeddings CSV produced by the embedding scripts."""
+
     return pd.read_csv(Path(path))
 
 
 def _namespace_from_type(label: Optional[str]) -> str:
+    """Infer the namespace prefix from the document/node type."""
+
     if not label:
         return ""
-    if label.startswith("CKG_"):
-        return "CKG_"
+    if label.startswith("PRIME_"):
+        return "PRIME_"
     if label.startswith("PKG_"):
         return "PKG_"
     return label.split("_")[0]
+
+
+def _get_expander(config_path: str):
+    cfg = load_config(config_path)
+    backend = (cfg.get("graph.backend") or "neptune").lower()
+    if backend == "neptune":
+        from src.retrieval.expand_neptune import expand_subgraph
+
+        return expand_subgraph
+    raise ValueError("Only 'neptune' backend is supported")
 

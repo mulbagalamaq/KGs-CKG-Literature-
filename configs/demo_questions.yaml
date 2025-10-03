@@ -1,51 +1,49 @@
 - id: q1
   question: >-
-    Which proteomic experiments in CKG report elevated EGFR expression in colon
-    cancer, and what PubMed literature supports the functional relevance?
+    Which PrimeKG findings highlight EGFR involvement in colon cancer and which
+    PubMedKG articles provide supporting evidence?
   expected_context:
-    - Protein:EGFR
+    - Entity:EGFR
     - Disease:Colon Cancer
 
 - id: q2
   question: >-
-    Summarize pathways and findings from CKG experiments that implicate BRAF
-    V600E dysregulation and cite supporting PubMed articles.
+    Summarize PrimeKG relations connecting BRAF V600E to MAPK signaling and cite
+    supporting PubMedKG publications.
   expected_context:
-    - Protein:BRAF
+    - Entity:BRAF V600E
     - Pathway:MAPK signaling
 
 - id: q3
   question: >-
-    Identify interacting proteins for NRAS uncovered in CKG and highlight
-    PubMed evidence discussing resistance mechanisms to targeted inhibitors.
+    Identify PrimeKG interactions for NRAS and highlight PubMedKG evidence on
+    resistance mechanisms to targeted inhibitors.
   expected_context:
-    - Protein:NRAS
+    - Entity:NRAS
     - Interaction:Protein
 - id: demo-01
   question: >-
-    Which targeted therapies are supported by CIVIC evidence for BRAF V600E
-    variants, and which TCGA samples show matching variants?
+    Which targeted therapies does PrimeKG associate with BRAF V600E, and which
+    PubMedKG publications support those associations?
   expected_context:
-    - Gene:BRAF
-    - Variant:V600E
+    - Entity:BRAF V600E
+    - Therapy:Targeted
     - Disease:Melanoma
 
 - id: demo-02
   question: >-
-    Summarize EGFR expression patterns in CPTAC RNA-seq data and link relevant
-    PubMed literature mentions supporting therapeutic relevance in colorectal
-    cancer.
+    Summarize EGFR evidence captured in PrimeKG and list PubMedKG mentions
+    highlighting therapeutic relevance in colorectal cancer.
   expected_context:
-    - Gene:EGFR
+    - Entity:EGFR
     - Disease:Colorectal Cancer
 
 - id: demo-03
   question: >-
-    What resistance mechanisms involving NRAS Q61 mutations appear in CIVIC
-    evidence and PubMed literature, and how do they connect to MEK inhibitors?
+    What resistance mechanisms involving NRAS Q61 mutations are documented in
+    PrimeKG and PubMedKG, and how are they linked to MEK inhibitors?
   expected_context:
-    - Gene:NRAS
-    - Variant:Q61
+    - Entity:NRAS Q61
     - Drug:MEK inhibitor
 
 

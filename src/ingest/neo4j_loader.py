@@ -1,4 +1,9 @@
-"""Load dual CKG + PubMedKG CSV exports into Neo4j."""
+"""Utilities to bulk load PrimeKG + PubMedKG CSV exports into Neo4j.
+
+The loader expects Neptune-style CSVs (``nodes.csv`` and ``edges.csv``) emitted by
+``prime_to_neptune.py`` and ``pkg_to_neptune.py``. It can be invoked via the
+command line or imported directly from other scripts/tests.
+"""
 
 from __future__ import annotations
 
@@ -17,50 +22,58 @@ LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Load CKG + PubMedKG CSVs into Neo4j")
+    """Parse CLI arguments for the Neo4j loader."""
+    parser = argparse.ArgumentParser(description="Load PrimeKG + PubMedKG CSVs into Neo4j")
     parser.add_argument("--config", default="configs/neo4j.yaml", help="Path to configuration file")
-    parser.add_argument("--ckg-dir", default="data/graph/ckg", help="Directory containing CKG nodes/edges CSVs")
+    parser.add_argument("--prime-dir", default="data/graph/prime", help="Directory containing PrimeKG nodes/edges CSVs")
     parser.add_argument("--pkg-dir", default="data/graph/pkg", help="Directory containing PubMedKG nodes/edges CSVs")
     return parser.parse_args()
 
 
 def main() -> None:
+    """CLI entry point that reads args and executes the load."""
     args = parse_args()
     cfg = load_config(args.config)
 
-    load_neo4j_from_dirs(cfg, Path(args.ckg_dir), Path(args.pkg_dir))
+    load_neo4j_from_dirs(cfg, Path(args.prime_dir), Path(args.pkg_dir))
 
 
-def load_neo4j_from_dirs(cfg, ckg_dir: Path, pkg_dir: Path) -> None:
-    """Programmatic entry: load CKG and PKG CSV directories into Neo4j.
+def load_neo4j_from_dirs(cfg, prime_dir: Path, pkg_dir: Path) -> None:
+    """Programmatically load PrimeKG + PubMedKG CSVs into Neo4j.
 
-    Args:
-        cfg: Loaded configuration object from src.utils.config.load_config
-        ckg_dir: Directory containing CKG nodes.csv and edges.csv
-        pkg_dir: Directory containing PKG nodes.csv and edges.csv
+    Parameters
+    ----------
+    cfg:
+        :class:`~src.utils.config.AppConfig` instance with Neo4j settings under
+        ``neo4j``.
+    prime_dir:
+        Directory containing PrimeKG ``nodes.csv`` and ``edges.csv`` files.
+    pkg_dir:
+        Directory containing PubMedKG ``nodes.csv`` and ``edges.csv`` files.
     """
     neo4j_cfg = _read_neo4j_config(cfg.raw.get("neo4j", {}))
-    ckg_dir = Path(ckg_dir).resolve()
+    prime_dir = Path(prime_dir).resolve()
     pkg_dir = Path(pkg_dir).resolve()
 
-    if not ckg_dir.exists():
-        raise FileNotFoundError(f"CKG graph directory not found: {ckg_dir}")
+    if not prime_dir.exists():
+        raise FileNotFoundError(f"PrimeKG graph directory not found: {prime_dir}")
     if not pkg_dir.exists():
         raise FileNotFoundError(f"PKG graph directory not found: {pkg_dir}")
 
-    LOGGER.info("Loading Neo4j data from %s (CKG) and %s (PKG)", ckg_dir, pkg_dir)
+    LOGGER.info("Loading Neo4j data from %s (PrimeKG) and %s (PKG)", prime_dir, pkg_dir)
 
     driver = GraphDatabase.driver(neo4j_cfg["uri"], auth=(neo4j_cfg["username"], neo4j_cfg["password"]))
     try:
         with driver.session(database=neo4j_cfg.get("database", "neo4j")) as session:
             _create_constraints(session)
-            _load_dataset(session, ckg_dir / "nodes.csv", ckg_dir / "edges.csv", namespace="CKG")
+            _load_dataset(session, prime_dir / "nodes.csv", prime_dir / "edges.csv", namespace="PRIME")
             _load_dataset(session, pkg_dir / "nodes.csv", pkg_dir / "edges.csv", namespace="PKG")
     finally:
         driver.close()
 
 
 def _read_neo4j_config(raw: Dict[str, str]) -> Dict[str, str]:
+    """Validate required Neo4j keys and return the config mapping."""
     missing = [key for key in ("uri", "username", "password") if not raw.get(key)]
     if missing:
         raise ValueError(f"Neo4j configuration missing keys: {', '.join(missing)}")
@@ -68,16 +81,18 @@ def _read_neo4j_config(raw: Dict[str, str]) -> Dict[str, str]:
 
 
 def _create_constraints(session) -> None:
+    """Ensure uniqueness constraints exist for the PrimeKG/PKG namespaces."""
     constraints = [
-        "CREATE CONSTRAINT ckg_id IF NOT EXISTS FOR (n:CKG) REQUIRE n.`~id` IS UNIQUE",
+        "CREATE CONSTRAINT prime_id IF NOT EXISTS FOR (n:PRIME) REQUIRE n.`~id` IS UNIQUE",
         "CREATE CONSTRAINT pkg_id IF NOT EXISTS FOR (n:PKG) REQUIRE n.`~id` IS UNIQUE",
     ]
     for statement in constraints:
         session.run(statement)
-    LOGGER.info("Ensured Neo4j uniqueness constraints for CKG and PKG namespaces")
+    LOGGER.info("Ensured Neo4j uniqueness constraints for PRIME and PKG namespaces")
 
 
 def _load_dataset(session, nodes_path: Path, edges_path: Path, *, namespace: str) -> None:
+    """Load a single namespace's node/edge CSVs into Neo4j."""
     if not nodes_path.exists():
         LOGGER.warning("Nodes CSV not found for namespace %s: %s", namespace, nodes_path)
         return
@@ -100,6 +115,7 @@ def _load_dataset(session, nodes_path: Path, edges_path: Path, *, namespace: str
 
 
 def _merge_node(session, row: Dict[str, str]) -> None:
+    """MERGE a node row into the target database."""
     node_id = row.get("~id")
     if not node_id:
         LOGGER.warning("Skipping node without ~id: %s", row)
@@ -122,6 +138,7 @@ def _merge_node(session, row: Dict[str, str]) -> None:
 
 
 def _create_relationship(session, row: Dict[str, str]) -> None:
+    """Create a relationship between two nodes (idempotent)."""
     start_id = row.get("~from")
     end_id = row.get("~to")
     rel_type = row.get("~label")
@@ -140,6 +157,7 @@ def _create_relationship(session, row: Dict[str, str]) -> None:
 
 
 def _read_csv(path: Path) -> Iterable[Dict[str, str]]:
+    """Yield rows from a CSV, normalising empty strings to ``None``."""
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
@@ -148,16 +166,18 @@ def _read_csv(path: Path) -> Iterable[Dict[str, str]]:
 
 
 def _namespace_from_label(label: str | None) -> str | None:
+    """Return the namespace to add based on the dynamic label."""
     if not label:
         return None
-    if label.startswith("CKG_"):
-        return "CKG"
+    if label.startswith("PRIME_"):
+        return "PRIME"
     if label.startswith("PKG_"):
         return "PKG"
     return label.split("_")[0]
 
 
 def _coerce_value(value: str | None) -> object:
+    """Convert a CSV value into the appropriate Python primitive."""
     if value is None:
         return None
     lowered = value.lower()

@@ -1,4 +1,4 @@
-"""Streamlit UI for GraphRAG demo."""
+"""Streamlit UI for dual bio graph rag demo."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ import streamlit as st
 from src.qa.answer import answer_question
 
 
-st.set_page_config(page_title="CKG GraphRAG Demo", layout="wide")
-st.title("CKG + PubMedKG GraphRAG Demo")
+st.set_page_config(page_title="dual bio graph rag Demo", layout="wide")
+st.title("PrimeKG + PubMedKG dual bio graph rag Demo")
 
 config_path = st.sidebar.text_input("Config path", value="configs/default.yaml")
 
 question = st.text_area("Enter a question", value="Which experiments report elevated EGFR expression in colon cancer and what literature supports this?")
 
-if st.button("Run GraphRAG"):
+if st.button("Run dual bio graph rag"):
     with st.spinner("Retrieving context and generating answer..."):
         result = answer_question(config_path, question)
     st.subheader("Answer")

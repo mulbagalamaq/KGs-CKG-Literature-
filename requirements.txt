@@ -23,7 +23,6 @@ rdflib==7.1.0
 torch==2.4.1
 torchvision==0.19.1
 torchaudio==2.4.1
-neo4j>=5.22.0
 transformers==4.43.3
 accelerate==0.33.0
 sentence-transformers==3.0.1
@@ -38,4 +37,8 @@ seaborn==0.13.2
 plotly==5.24.1
 ruff==0.6.8
 pytest==8.3.2
+
+# OpenSearch client and AWS SigV4 auth
+opensearch-py==2.6.0
+requests-aws4auth==1.2.4
 

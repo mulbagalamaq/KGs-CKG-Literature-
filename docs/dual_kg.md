@@ -1,10 +1,10 @@
 # Dual Knowledge Graph Architecture
 
-The dual-KG deployment loads the Clinical Knowledge Graph (CKG) and PubMedKG (PKG) side-by-side into a single Amazon Neptune cluster. Each KG retains its native schema and semantics. Downstream retrieval performs query-time joins by exact identifiers or vector similarity, avoiding any harmonization or synthetic data generation.
+The dual-KG deployment loads PrimeKG (precision medicine knowledge graph) and PubMedKG side-by-side into Amazon Neptune. Each KG retains its native schema and semantics. Downstream retrieval performs query-time joins by exact identifiers or vector similarity, avoiding any harmonization or synthetic augmentation.
 
 ## Key concepts
 
-- **Namespaces**: CKG nodes and edges are prefixed with `CKG_`, while PubMedKG nodes and edges use `PKG_`. This allows Neptune queries and OpenSearch filters to stay scoped to their original sources.
+- **Namespaces**: PrimeKG nodes and edges are prefixed with `PRIME_`, while PubMedKG nodes and edges use `PKG_`. This allows graph queries and OpenSearch filters to stay scoped to their original sources.
 - **Separation of concerns**: Each KG is ingested from raw exports to Neptune-ready CSVs independently. The GraphRAG pipeline combines them only during retrieval.
 - **Query-time joining**: Answer generation relies on two strategies:
   - Exact matches on shared identifiers (e.g., proteins, diseases) retrieved from both graphs.
@@ -13,43 +13,41 @@ The dual-KG deployment loads the Clinical Knowledge Graph (CKG) and PubMedKG (PK
 ## Data flow
 
 1. **Raw exports**
-   - Place CKG APOC CSV exports under `data/local/ckg/exports/` (filenames configurable in `configs/ingest_ckg.yaml`).
+   - Place PrimeKG exports (e.g., `kg.csv`) under `data/local/primekg/exports/` (filenames configurable in `configs/ingest_prime.yaml`).
    - Place PubMedKG CSV/TSV extracts under `data/local/pubmedkg/exports/` (filenames configurable in `configs/ingest_pkg.yaml`).
 
-2. **CKG mapping** (`src/ingest/ckg_to_neptune.py`)
-   - Reads node and relationship CSVs; preserves all properties.
-   - Writes `data/graph/ckg/nodes.csv` and `data/graph/ckg/edges.csv` with namespaced labels like `CKG_Protein`, `CKG_INTERACTS_WITH`.
+2. **PrimeKG mapping** (`src/ingest/prime_to_neptune.py`)
+   - Reads the PrimeKG edge list (`kg.csv`) or pre-split node/edge CSVs and preserves all properties.
+   - Writes `data/graph/prime/nodes.csv` and `data/graph/prime/edges.csv` with namespaced labels like `PRIME_Entity`, `PRIME_RELATION`.
 
 3. **PubMedKG mapping** (`src/ingest/pkg_to_neptune.py`)
    - Reads publication, mention, and citation files.
    - Emits `data/graph/pkg/nodes.csv` and `data/graph/pkg/edges.csv` using labels `PKG_Publication`, `PKG_MENTIONS`, `PKG_CITES`.
 
 4. **Graph database loading**
-   - **Neptune** (`src/ingest/neptune_loader.py`): generates loader payload JSON targeting S3 prefixes `graph/ckg/` and `graph/pkg/`. Submit each JSON payload to Neptune’s bulk loader API to populate the graph.
-   - **Neo4j** (`src/ingest/neo4j_loader.py`): loads the CSVs via the Bolt driver. Configure credentials in `configs/neo4j.yaml`, ensure Neo4j is running (Docker `neo4j:5` or Desktop), then run `make neo4j_load`. The loader assigns labels `CKG`/`PKG` in addition to the original namespace label and creates uniqueness constraints on `~id` per namespace.
+   - **Neptune** (`src/ingest/neptune_loader.py`): generates loader payload JSON targeting S3 prefixes `graph/prime/` and `graph/pkg/`. Submit each JSON payload to Neptune’s bulk loader API to populate the graph.
 
 5. **Embeddings & Vector Store**
-   - `src/embeddings/text_embed.py` builds document vectors from PKG publications and CKG findings.
+   - `src/embeddings/text_embed.py` builds document vectors from PKG publications and PrimeKG nodes.
    - `src/embeddings/node_embed.py` produces embeddings for all nodes across namespaces.
    - `src/retrieval/vector_store.py` stores vectors in OpenSearch with namespace metadata for filtering.
 
 6. **GraphRAG Retrieval**
    - Vector KNN (OpenSearch) selects seed nodes across both namespaces.
-   - `src/retrieval/expand.py` expands within the configured graph backend (Neptune via openCypher endpoint or Neo4j via Bolt) up to the configured hop count while respecting namespace filters and degree limits.
+   - `src/retrieval/expand_neptune.py` expands within Neptune’s openCypher endpoint up to the configured hop count while respecting namespace filters and degree limits.
    - `src/retrieval/prune.py` trims the subgraph before LLM answer synthesis.
 
 ## Operational summary
 
-- Run `make ckg_to_neptune` and `make pkg_to_neptune` after staging input files.
-- Upload `data/graph/ckg/*.csv` and `data/graph/pkg/*.csv` to S3 prefixes referenced by `configs/default.yaml`.
-- Execute `make load_ckg` and `make load_pkg` to produce loader payloads, then invoke the Neptune bulk loader separately for each prefix.
-- For Neo4j development, run `make neo4j_load` to ingest both namespaces locally.
-- After loading (Neptune or Neo4j), run `make embed` to populate OpenSearch and `make qa` (or `make qa_neo4j`) to exercise the GraphRAG pipeline.
+- Run `make prime_to_neptune` and `make pkg_to_neptune` after staging input files.
+- Upload `data/graph/prime/*.csv` and `data/graph/pkg/*.csv` to S3 prefixes referenced by `configs/default.yaml`.
+- Execute `make load_prime` and `make load_pkg` to produce loader payloads, then invoke the Neptune bulk loader separately for each prefix.
+- After loading Neptune, run `make embed` to populate OpenSearch and `make qa` to exercise the GraphRAG pipeline.
 
 ## Query-time joining strategies
 
 - **Exact key linking**: If both graphs contain entities with matching identifiers (e.g., `EGFR`), the expanded subgraph will contain nodes from both namespaces, enabling downstream reasoning.
-- **Semantic proximity**: Vector similarity across embeddings connects, for example, PKG publications mentioning a gene with CKG findings about related pathways.
+- **Semantic proximity**: Vector similarity across embeddings connects, for example, PKG publications mentioning a gene with PrimeKG findings about related pathways.
 
 ## Residual considerations
 

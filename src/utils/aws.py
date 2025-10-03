@@ -24,15 +24,15 @@ def ensure_budget(config_path: str, profile: str | None = None, limit: float = 1
         client.create_budget(
             AccountId=account_id,
             Budget={
-                "BudgetName": "CKGGraphRAG",
+                "BudgetName": "PrimeKGGraphRAG",
                 "BudgetLimit": {"Amount": str(limit), "Unit": "USD"},
                 "TimeUnit": "MONTHLY",
                 "BudgetType": "COST",
             },
         )
-        LOGGER.info("Created AWS Budget CKGGraphRAG")
+        LOGGER.info("Created AWS Budget PrimeKGGraphRAG")
     except client.exceptions.DuplicateRecordException:
-        LOGGER.info("AWS Budget CKGGraphRAG already exists")
+        LOGGER.info("AWS Budget PrimeKGGraphRAG already exists")
 
 
 def teardown_resources(config_path: str, profile: str | None = None) -> None:
@@ -40,7 +40,7 @@ def teardown_resources(config_path: str, profile: str | None = None) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AWS helpers for CKG GraphRAG")
+    parser = argparse.ArgumentParser(description="AWS helpers for PrimeKG GraphRAG")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--ensure-budget", action="store_true")
     parser.add_argument("--teardown", action="store_true")

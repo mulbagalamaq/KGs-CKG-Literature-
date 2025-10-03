@@ -1,5 +1,0 @@
-ckg_ingest:
-  input_dir: data/local/ckg/exports
-  output_dir: data/graph/ckg
-  nodes_glob: ckg_nodes_*.csv
-  relationships_glob: ckg_relationships_*.csv

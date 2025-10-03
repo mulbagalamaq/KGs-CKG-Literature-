@@ -1,4 +1,4 @@
-"""OpenSearch vector index helpers for dual CKG + PubMedKG graphs."""
+"""OpenSearch vector index helpers for dual PrimeKG + PubMedKG graphs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import logging
 from typing import Dict, Iterable, List
 
 from opensearchpy import OpenSearch, RequestsHttpConnection
+from requests_aws4auth import AWS4Auth
+import boto3
 
 from src.utils.config import load_config
 
@@ -15,10 +17,19 @@ from src.utils.config import load_config
 LOGGER = logging.getLogger(__name__)
 
 
-def _client(endpoint: str) -> OpenSearch:
+def _client_with_auth(endpoint: str, use_iam_auth: bool, region: str, service: str) -> OpenSearch:
+    http_auth = None
+    if use_iam_auth:
+        session = boto3.Session(region_name=region)
+        credentials = session.get_credentials()
+        if credentials is None:
+            raise RuntimeError("AWS credentials not found for OpenSearch SigV4 auth")
+        frozen = credentials.get_frozen_credentials()
+        http_auth = AWS4Auth(frozen.access_key, frozen.secret_key, region, service, session_token=frozen.token)
+
     return OpenSearch(
         hosts=[endpoint],
-        http_auth=None,
+        http_auth=http_auth,
         use_ssl=endpoint.startswith("https"),
         verify_certs=True,
         connection_class=RequestsHttpConnection,
@@ -30,8 +41,11 @@ def create_index(config_path: str) -> None:
     endpoint = cfg.get("open_search.endpoint")
     index_name = cfg.get("open_search.index_name")
     dimension = cfg.get("open_search.embedding_dimension", 768)
+    use_iam = bool(cfg.get("open_search.use_iam_auth", True))
+    region = cfg.get("project.region", "us-east-1")
+    service = cfg.get("open_search.service", "aoss")  # 'aoss' for Serverless, 'es' for managed
 
-    client = _client(endpoint)
+    client = _client_with_auth(endpoint, use_iam, region, service)
     if client.indices.exists(index=index_name):
         LOGGER.info("Index %s already exists", index_name)
         return
@@ -70,7 +84,10 @@ def upsert_vectors(config_path: str, documents: Iterable[Dict]) -> None:
     cfg = load_config(config_path)
     endpoint = cfg.get("open_search.endpoint")
     index_name = cfg.get("open_search.index_name")
-    client = _client(endpoint)
+    use_iam = bool(cfg.get("open_search.use_iam_auth", True))
+    region = cfg.get("project.region", "us-east-1")
+    service = cfg.get("open_search.service", "aoss")
+    client = _client_with_auth(endpoint, use_iam, region, service)
 
     actions = []
     count = 0
@@ -102,7 +119,10 @@ def query_vectors(config_path: str, query_vector: List[float], top_k: int = 8) -
     endpoint = cfg.get("open_search.endpoint")
     index_name = cfg.get("open_search.index_name")
     namespaces = cfg.get("retrieval.namespaces.include", [])
-    client = _client(endpoint)
+    use_iam = bool(cfg.get("open_search.use_iam_auth", True))
+    region = cfg.get("project.region", "us-east-1")
+    service = cfg.get("open_search.service", "aoss")
+    client = _client_with_auth(endpoint, use_iam, region, service)
 
     query: Dict[str, Dict] = {
         "size": top_k,

@@ -1,4 +1,4 @@
-"""Node embedding utilities for dual CKG + PubMedKG graphs."""
+"""Node embedding utilities for dual PrimeKG + PubMedKG graphs."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def build_node_embeddings(config_path: str) -> Path:
+    """Build sentence embeddings for graph nodes across both namespaces."""
+
     cfg = load_config(config_path)
     seed_everything()
 
@@ -28,7 +30,7 @@ def build_node_embeddings(config_path: str) -> Path:
     nodes = _load_all_nodes(cfg)
     rows = _to_embedding_rows(nodes)
     if not rows:
-        raise ValueError("No graph nodes available for embeddings. Run the CKG/PKG loaders first.")
+        raise ValueError("No graph nodes available for embeddings. Run the PrimeKG/PubMedKG loaders first.")
 
     texts = [row["text"] for row in rows]
     embeddings = model.encode(texts, show_progress_bar=False)
@@ -45,8 +47,9 @@ def build_node_embeddings(config_path: str) -> Path:
 
 
 def _load_all_nodes(cfg) -> pd.DataFrame:
+    """Load node CSVs from both namespaces into a single DataFrame."""
     paths = [
-        Path(cfg.get("ckg_ingest.output_dir", "data/graph/ckg")) / "nodes.csv",
+        Path(cfg.get("prime_ingest.output_dir", "data/graph/prime")) / "nodes.csv",
         Path(cfg.get("pkg_ingest.output_dir", "data/graph/pkg")) / "nodes.csv",
     ]
     frames: List[pd.DataFrame] = []
@@ -63,6 +66,7 @@ def _load_all_nodes(cfg) -> pd.DataFrame:
 
 
 def _to_embedding_rows(df: pd.DataFrame) -> List[dict]:
+    """Return unique node records with id/type/text fields for encoding."""
     rows: List[dict] = []
     seen: set[str] = set()
     for _, row in df.iterrows():
@@ -77,6 +81,7 @@ def _to_embedding_rows(df: pd.DataFrame) -> List[dict]:
 
 
 def _row_to_text(row: pd.Series) -> str:
+    """Serialise node properties into a single text string."""
     parts: List[str] = [str(row["~label"])]
     for column, value in row.items():
         if column in {"~id", "~label"}:
@@ -88,6 +93,7 @@ def _row_to_text(row: pd.Series) -> str:
 
 
 def main() -> None:
+    """CLI entry point for building node embeddings."""
     parser = argparse.ArgumentParser(description="Build node embeddings")
     parser.add_argument("--config", default="configs/default.yaml")
     args = parser.parse_args()
